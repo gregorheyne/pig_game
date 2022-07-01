@@ -147,7 +147,7 @@ class PigWorldLooped:
 
 
 def value_iteration(env, gamma, theta):
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Stated value iteration')
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started value iteration')
 
     V = {s: 0 for s in env.S}
     log_counter = 0
