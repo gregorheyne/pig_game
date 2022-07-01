@@ -1,6 +1,6 @@
 # Pig Dice Game
 
-- implementation following "Neller, Presser - Optimal play of pig"
+- implementation of Pig Game following theory in  "Neller, Presser - Optimal play of pig"
     - e.g. here: https://cupola.gettysburg.edu/cgi/viewcontent.cgi?article=1003&context=csfac 
 
 
