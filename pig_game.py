@@ -1,4 +1,4 @@
-import enum
+# from this import d
 import numpy as np
 import itertools
 import pandas as pd
@@ -147,9 +147,8 @@ class PigWorldLooped:
         return self.__non_terminal_states
 
 
-def value_iteration(env, gamma, theta):
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started value iteration')
-
+def value_iteration_vanilla(env, gamma, theta):
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started vanilla value iteration')
     V = {s: 0 for s in env.S}
     log_counter = 0
     while True:
@@ -162,11 +161,46 @@ def value_iteration(env, gamma, theta):
         if delta < theta:
             break
         
-        print(f'{time_now()} Loop {log_counter} finshed. Delta at {delta}') if log_counter%5 == 0 else None
+        print(f'{time_now()} Loop {log_counter} finished. Delta at {delta}') if log_counter%5 == 0 else None
 
     q_values = get_q_values(env, V, gamma)
 
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Finished vanilla value iteration')
     return V, q_values
+
+
+def value_iteration_backward(env, gamma, theta):
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started backward value iteration')
+
+    V = {s: 0 for s in env.S}
+
+    score_sum_dict = get_partition_by_score_sum()
+    for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
+        print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
+        while True:
+            delta = 0
+            for s in score_sum_dict[score_sum]:
+                v = V[s]
+                bellman_optimality_update(env, V, s, gamma)
+                delta = max(delta, abs(v - V[s]))
+            if delta < theta:
+                break
+
+    q_values = get_q_values(env, V, gamma)
+
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Finished backward value iteration')
+    return V, q_values
+
+
+def get_partition_by_score_sum():
+    score_sums = pd.DataFrame(env.non_terminal_states, columns=['score_1', 'score_2', 'k'])
+    score_sums['score_sum'] = score_sums['score_1'] + score_sums['score_2']
+    score_sums_dict = {}
+    for score_sum in set(score_sums['score_sum']):
+        temp = score_sums[score_sums['score_sum'] == score_sum].copy()
+        temp = tuple((temp[['score_1', 'score_2', 'k']]).itertuples(index=False, name=None))
+        score_sums_dict[score_sum] = temp
+    return score_sums_dict
 
 
 def bellman_optimality_update(env, V, s, gamma):
@@ -202,8 +236,8 @@ def get_q_values(env, V, gamma):
     return q_values
 
 
-# env = PigWorldLooped(num_sides=6,
-#                      winning_score=50,
+# env = PigWorldLooped(num_sides=4,
+#                      winning_score=25,
 #                      game_type='dice')
 env = PigWorldLooped(winning_score=10)
 # env.__dict__
@@ -212,8 +246,9 @@ env = PigWorldLooped(winning_score=10)
 # env.terminal_states
 # env.non_terminal_states
 gamma = 1
-theta = 0.000001
-V, q_values = value_iteration(env, gamma, theta)
+theta = 0.0001
+# V, q_values = value_iteration_vanilla(env, gamma, theta)
+V, q_values = value_iteration_backward(env, gamma, theta)
 
 s = (5,7,3)
 q_values.loc[s,:]
@@ -299,24 +334,24 @@ plt.show()
 # to make this example work in our context look at the solution
 # of Steven in
 # https://stackoverflow.com/questions/9170838/surface-plots-in-matplotlib
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator
+# import matplotlib.pyplot as plt
+# from matplotlib import cm
+# from matplotlib.ticker import LinearLocator
 
-X = np.arange(-5, 5, 0.25)
-Y = np.arange(-5, 5, 0.25)
-X, Y = np.meshgrid(X, Y)
-R = np.sqrt(X**2 + Y**2)
-Z = np.sin(R)
-# Plot the surface.
-fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
-                       linewidth=0, antialiased=False)
-# A StrMethodFormatter is used automatically
-ax.zaxis.set_major_formatter('{x:.02f}')
+# X = np.arange(-5, 5, 0.25)
+# Y = np.arange(-5, 5, 0.25)
+# X, Y = np.meshgrid(X, Y)
+# R = np.sqrt(X**2 + Y**2)
+# Z = np.sin(R)
+# # Plot the surface.
+# fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+# surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+#                        linewidth=0, antialiased=False)
+# # A StrMethodFormatter is used automatically
+# ax.zaxis.set_major_formatter('{x:.02f}')
 
-# Add a color bar which maps values to colors.
-fig.colorbar(surf, shrink=0.5, aspect=5)
+# # Add a color bar which maps values to colors.
+# fig.colorbar(surf, shrink=0.5, aspect=5)
 
-plt.show()
+# plt.show()
 # endregion
