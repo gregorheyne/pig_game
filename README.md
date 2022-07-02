@@ -5,7 +5,7 @@
 
 
 - TODO:
-    - plot decision boundary (to compare to some of the plots in Neller, Presser)
-    - optimize/vectorize (get rid of some(/all?) of the loops)
+    - optimize computation of V by running it backwards as described in the paper
+
 
 
