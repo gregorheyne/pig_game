@@ -5,7 +5,7 @@
 
 
 - TODO:
-    - optimize computation of V by running it backwards as described in the paper
+    - test run of 6 dice game! do results match Neller, Presser?
 
 
 
