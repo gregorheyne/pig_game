@@ -1,9 +1,14 @@
+import enum
 import numpy as np
 import itertools
 import pandas as pd
 import datetime as dt
+import plotly.express as px
+import plotly.graph_objects as go
 
-
+time_format = "%H:%M:%S"
+def time_now():
+    return dt.datetime.now().strftime(time_format)
 
 class PigWorldLooped:
     def __init__(self,
@@ -30,16 +35,13 @@ class PigWorldLooped:
         self.__roll_values = tuple(self.__roll_values)
 
         self.__A = ('roll', 'hold')
-        print('building state space')
+        print(f'{time_now()} building state space')
         self.__S = self._build_state_space(self.__winning_score,
                                            self.__max_score,
                                            self.__min_roll)
-        print('get terminal states')
         self.__terminal_states = tuple(s for s in self.__S if s[0] + s[2] >= self.__winning_score)
-        print('get none terminal states')
-        self.__non_terminal_states = tuple(s for s in self.__S if s not in self.__terminal_states)
-        
-        print('finished building env')
+        self.__non_terminal_states = tuple(s for s in self.__S if s[0] + s[2] < self.__winning_score)
+        print(f'{time_now()} finished building env')
 
     def _build_state_space(self,
                            winning_score,
@@ -71,7 +73,6 @@ class PigWorldLooped:
         ''''
         attainable values from (i, j, k) are:
         (j, i, 0), (i, j, k+1), (i, j, k+2), ... , (i, j, k+max_roll)
-        s = (0, 1, 1)    
         '''
         # create the first attainable state, which is the one resulting
         # from rolling a 1 / throwing a tail, i.e. from a fail
@@ -161,7 +162,7 @@ def value_iteration(env, gamma, theta):
         if delta < theta:
             break
         
-        print(f'{dt.datetime.now().strftime("%H:%M:%S")} Loop {log_counter} finshed. Delta at {delta}') if log_counter%5 == 0 else None
+        print(f'{time_now()} Loop {log_counter} finshed. Delta at {delta}') if log_counter%5 == 0 else None
 
     q_values = get_q_values(env, V, gamma)
 
@@ -201,33 +202,121 @@ def get_q_values(env, V, gamma):
     return q_values
 
 
-env = PigWorldLooped(num_sides=4,
-                     winning_score=25,
-                     game_type='dice')
-# env = PigWorld(winning_score=10)
+# env = PigWorldLooped(num_sides=6,
+#                      winning_score=50,
+#                      game_type='dice')
+env = PigWorldLooped(winning_score=10)
 # env.__dict__
 # env.A
 # env.S
 # env.terminal_states
 # env.non_terminal_states
 gamma = 1
-theta = 0.001
+theta = 0.000001
 V, q_values = value_iteration(env, gamma, theta)
 
 s = (5,7,3)
 q_values.loc[s,:]
 
-print(q_values)
-# V
 
-# q_values.head(10)
+# region get decision_space df
+# generate roll_flag
+decision_space = q_values.copy()
+roll_flag = decision_space['roll'] >= decision_space['hold']
+decision_space['roll_flag'] = roll_flag
+decision_space['roll_flag'] = decision_space['roll_flag'].astype('int')
+
+# turn index into columns
+cols_temp = list(decision_space.columns)
+decision_space.reset_index(inplace=True, drop=False)
+decision_space.columns = ['score_1', 'score_2', 'turn_total'] + cols_temp
+# derive highest k where still rolling given score_1 and score_2
+decision_space['max_turn_total'] = decision_space.groupby(by=['score_1', 'score_2', 'roll_flag'])['turn_total'].transform(max)
+
+# look at some decision boundaries for score_1 and score_2 fixed
+score_1 = 1
+score_2 = 8
+temp_flag = ((decision_space['score_1'] == score_1) & (decision_space['score_2'] == score_2))
+decision_line = decision_space[temp_flag].copy()
+decision_line
+# endregion
 
 
+# region plot decision boundary with plotly
+temp_flag = ((decision_space['roll_flag'] == 1)
+             & ((decision_space['turn_total'] == decision_space['max_turn_total'])))
+decision_boundary = decision_space[temp_flag].copy()
+
+# transform data into shape of data used in the plotly example on
+# https://plotly.com/python/3d-surface-plots/
+# axis annotation taken from https://plotly.com/python/3d-axes/
+decision_boundary.set_index(keys=['score_1', 'score_2'], inplace=True)
+decision_boundary = decision_boundary[['turn_total']]
+decision_boundary = decision_boundary.unstack()
+decision_boundary = decision_boundary.T
+print(decision_boundary)
+
+fig = go.Figure(data=[go.Surface(z=decision_boundary.values)])
+fig.update_traces(contours_z=dict(show=True, usecolormap=True,
+                                  highlightcolor="limegreen", project_z=True))
+fig.update_layout(title='Decision boundary', 
+                    scene = dict(
+                    xaxis_title='x = Score_1',
+                    yaxis_title='y = Score_2',
+                    zaxis_title='z = Turn Value k'),
+                    width=700,
+                    margin=dict(r=20, b=10, l=10, t=10))
+fig.show()
+# endregion
 
 
+# region matplotlib plot as in
+# https://stackoverflow.com/questions/9170838/surface-plots-in-matplotlib
+# using Emanuels solution
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.pyplot as plt
+from matplotlib import cm
+
+# prepare data
+temp_flag = ((decision_space['roll_flag'] == 1)
+             & ((decision_space['turn_total'] == decision_space['max_turn_total'])))
+decision_boundary = decision_space[temp_flag].copy()
+x = decision_boundary['score_1']
+y = decision_boundary['score_2']
+z = decision_boundary['turn_total']
+
+fig = plt.figure()
+ax = Axes3D(fig)
+surf = ax.plot_trisurf(x, y, z, cmap=cm.jet, linewidth=0.1)
+fig.colorbar(surf, shrink=0.5, aspect=5)
+# plt.savefig('teste.pdf')
+plt.show()
+# endregion
 
 
+# region surface plot with matplotlib
+# https://matplotlib.org/stable/gallery/mplot3d/surface3d.html
+# to make this example work in our context look at the solution
+# of Steven in
+# https://stackoverflow.com/questions/9170838/surface-plots-in-matplotlib
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator
 
+X = np.arange(-5, 5, 0.25)
+Y = np.arange(-5, 5, 0.25)
+X, Y = np.meshgrid(X, Y)
+R = np.sqrt(X**2 + Y**2)
+Z = np.sin(R)
+# Plot the surface.
+fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+                       linewidth=0, antialiased=False)
+# A StrMethodFormatter is used automatically
+ax.zaxis.set_major_formatter('{x:.02f}')
 
+# Add a color bar which maps values to colors.
+fig.colorbar(surf, shrink=0.5, aspect=5)
 
-
+plt.show()
+# endregion
