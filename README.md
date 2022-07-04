@@ -5,7 +5,7 @@
 
 
 - TODO:
-    - test run of 6 dice game! do results match Neller, Presser?
+    - do results match Neller, Presser?
 
 
 

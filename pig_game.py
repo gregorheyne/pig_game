@@ -39,8 +39,8 @@ class PigWorldLooped:
         self.__S = self._build_state_space(self.__winning_score,
                                            self.__max_score,
                                            self.__min_roll)
-        self.__terminal_states = tuple(s for s in self.__S if s[0] + s[2] >= self.__winning_score)
-        self.__non_terminal_states = tuple(s for s in self.__S if s[0] + s[2] < self.__winning_score)
+        self.__terminal_states = tuple(s for s in self.__S if self.is_terminal_state(s))
+        self.__non_terminal_states = tuple(s for s in self.__S if not self.is_terminal_state(s))
         print(f'{time_now()} finished building env')
 
     def _build_state_space(self,
@@ -52,8 +52,8 @@ class PigWorldLooped:
         # AND turn value k > 0, we only need i and j to go up to winning_score - 1, which 
         # is taken care of by the range definition
         all_states = tuple(itertools.product(range(0, winning_score, 1),
-                                            range(0, winning_score, 1),
-                                            range(0, max_score + 1, 1)))
+                                             range(0, winning_score, 1),
+                                             range(0, max_score + 1, 1)))
 
         # remove all states where the agents current score plus 
         # his current turn value are higher than the max score
@@ -65,9 +65,33 @@ class PigWorldLooped:
         if min_roll == 1:
             all_states = tuple(s for s in all_states if not (s[2] == 1))
 
+        # inner consistency check:
+        for s in all_states:
+            assert self.is_valid_state(s), f'inner consistency check failed on {s}'
+
         print(f'built state space of length {len(all_states)}')
 
         return all_states
+
+    def is_valid_state(self, s):
+        valid_state_flag = True
+        if s[0] > self.__winning_score - 1:
+            valid_state_flag = False
+        if s[1] > self.__winning_score - 1:
+            valid_state_flag = False
+        if s[2] > self.__max_score:
+            valid_state_flag = False
+        if (s[0] + s[2] > self.__max_score):
+            valid_state_flag = False
+        if ((self.__min_roll == 1) & (s[2] == 1)):
+            valid_state_flag = False
+        return valid_state_flag
+
+    def is_terminal_state(self, s):
+        is_terminal_state_flag = False
+        if (s[0] + s[2] >= self.__winning_score):
+            is_terminal_state_flag = True
+        return is_terminal_state_flag
 
     def get_attainable_states_after_roll(self, s):
         ''''
@@ -85,7 +109,7 @@ class PigWorldLooped:
         attainable_states = (sp_fail, ) + sp_success
 
         # check that attainable states are within the state space!
-        failed_states = [sp for sp in attainable_states if sp not in self.__S]
+        failed_states = [sp for sp in attainable_states if not self.is_valid_state(sp)]
         assert_str = f'input {s} created attainable state(s) {failed_states} not in state space'
         assert not failed_states, assert_str
 
@@ -100,12 +124,12 @@ class PigWorldLooped:
         
         # check that attainable state is within the state space!
         assert_str = f'input {s} created attainable state {sp} not in state space'
-        assert sp in self.__S, assert_str
+        assert self.is_valid_state(sp), assert_str
 
         return sp
 
     def get_reward(self, s):
-        r = 1 if s in self.__terminal_states else 0
+        r = 1 if self.is_terminal_state(s) else 0
         return r
 
     def transitions(self, s, a):
@@ -160,9 +184,9 @@ def value_iteration_vanilla(env, gamma, theta):
             delta = max(delta, abs(v - V[s]))
         if delta < theta:
             break
-        
         print(f'{time_now()} Loop {log_counter} finished. Delta at {delta}') if log_counter%5 == 0 else None
 
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Get final q-values')
     q_values = get_q_values(env, V, gamma)
 
     print(f'{dt.datetime.now().strftime("%H:%M:%S")} Finished vanilla value iteration')
@@ -174,7 +198,7 @@ def value_iteration_backward(env, gamma, theta):
 
     V = {s: 0 for s in env.S}
 
-    score_sum_dict = get_partition_by_score_sum()
+    score_sum_dict = get_partition_by_score_sum(env)
     for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
         print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
         while True:
@@ -192,7 +216,7 @@ def value_iteration_backward(env, gamma, theta):
     return V, q_values
 
 
-def get_partition_by_score_sum():
+def get_partition_by_score_sum(env):
     score_sums = pd.DataFrame(env.non_terminal_states, columns=['score_1', 'score_2', 'k'])
     score_sums['score_sum'] = score_sums['score_1'] + score_sums['score_2']
     score_sums_dict = {}
@@ -236,10 +260,12 @@ def get_q_values(env, V, gamma):
     return q_values
 
 
-# env = PigWorldLooped(num_sides=4,
-#                      winning_score=25,
-#                      game_type='dice')
-env = PigWorldLooped(winning_score=10)
+num_sides = 6
+winning_score = 100
+game_type = 'dice'
+env = PigWorldLooped(num_sides=num_sides,
+                     winning_score=winning_score,
+                     game_type=game_type)
 # env.__dict__
 # env.A
 # env.S
@@ -250,8 +276,17 @@ theta = 0.0001
 # V, q_values = value_iteration_vanilla(env, gamma, theta)
 V, q_values = value_iteration_backward(env, gamma, theta)
 
-s = (5,7,3)
-q_values.loc[s,:]
+filename = f'q_values_{game_type}_{num_sides}_{winning_score}.gz'
+q_values.to_pickle(filename)
+
+
+# score_sum_dict = get_partition_by_score_sum(env)
+# for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
+#     print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
+# score_sum_dict[195]
+
+# s = (5,7,3)
+# q_values.loc[s,:]
 
 
 # region get decision_space df
