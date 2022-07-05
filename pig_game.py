@@ -210,6 +210,7 @@ def value_iteration_backward(env, gamma, theta):
             if delta < theta:
                 break
 
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Get final q-values')
     q_values = get_q_values(env, V, gamma)
 
     print(f'{dt.datetime.now().strftime("%H:%M:%S")} Finished backward value iteration')
