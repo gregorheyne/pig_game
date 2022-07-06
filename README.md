@@ -5,7 +5,10 @@
 
 
 - TODO:
-    - do results match Neller, Presser?
+    - set viewing angle on 3d-plot
+    - make plot that shows the evolution of p-hold and p-roll for a given score_2 and score 1 along k (does that make sense? think about which dimension is interesting)
+    - run 6-sided dice 50 game to see the decision boundary
+
 
 
 
