@@ -382,89 +382,52 @@ decision_line
 # endregion
 
 
-# region plot decision boundary for score_2 fixed
+# region plot decision boundary
+# for score_2 fixed
 score_2 = 30
 temp_flag = ((decision_space['score_2'] == score_2) & (decision_space['boundary_flag'] == 1))
 decision_line = decision_space[temp_flag].copy()
-decision_line
-plt.scatter(x=decision_line['score_1'], y=decision_line['turn_total'])
-plt.plot(list(decision_line['score_1']), list(decision_line['turn_total']))
-# endregion
-
-
-# region plot decision boundary with plotly
-temp_flag = decision_space['boundary_flag'] == 1
-decision_boundary = decision_space[temp_flag].copy()
-
-# transform data into shape of data used in the plotly example on
-# https://plotly.com/python/3d-surface-plots/
-# axis annotation taken from https://plotly.com/python/3d-axes/
-decision_boundary.set_index(keys=['score_1', 'score_2'], inplace=True)
-decision_boundary = decision_boundary[['turn_total']]
-decision_boundary = decision_boundary.unstack()
-decision_boundary = decision_boundary.T
-print(decision_boundary)
-
-fig = go.Figure(data=[go.Surface(z=decision_boundary.values)])
-fig.update_traces(contours_z=dict(show=True, usecolormap=True,
-                                  highlightcolor="limegreen", project_z=True))
-fig.update_layout(title='Decision boundary', 
-                    scene = dict(
-                    xaxis_title='x = Score_1',
-                    yaxis_title='y = Score_2',
-                    zaxis_title='z = Turn Value k'),
-                    width=700,
-                    margin=dict(r=20, b=10, l=10, t=10))
+fig = px.scatter(decision_line, x='score_1', y='turn_total')
+fig.update_layout(title=f'Decision boundary for the score of player 2 fixed at {score_2}',
+                  xaxis_title='Score of Player 1')
 fig.show()
+
+# general 3D
+temp_flag = (decision_space['boundary_flag'] == 1)
+boundary_space = decision_space[temp_flag].copy()
+fig = px.scatter_3d(boundary_space, 
+                    x='score_1',
+                    y='score_2',
+                    z='turn_total',
+                    color='score_2',
+                    color_continuous_midpoint=boundary_space['score_2'].mean()
+                    # size='turn_total',
+                    # opacity=0.7
+                    )
+fig.show()
+
+import plotly.graph_objects as go
+
+fig = go.Figure(data=[go.Scatter3d(
+    x=boundary_space['score_1'],
+    y=boundary_space['score_2'],
+    z=boundary_space['turn_total'],
+    mode='markers',
+    marker=dict(
+        # size=12,
+        color=boundary_space['score_2'],
+        colorscale='BrBg'
+    )
+)])
+fig.update_layout(width=750,
+                  height=750,
+                  title='Decision boundary',
+                  scene={'xaxis_title': 'score_1 (=x)',
+                         'yaxis_title': 'score_2 (=y)',
+                         'zaxis_title': 'turn total (=z)'})
+fig.show()
+
 # endregion
 
 
-# region matplotlib plot as in
-# https://stackoverflow.com/questions/9170838/surface-plots-in-matplotlib
-# using Emanuels solution
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-from matplotlib import cm
 
-# prepare data
-temp_flag = decision_space['boundary_flag'] == 1
-decision_boundary = decision_space[temp_flag].copy()
-x = decision_boundary['score_1']
-y = decision_boundary['score_2']
-z = decision_boundary['turn_total']
-
-fig = plt.figure()
-ax = Axes3D(fig)
-surf = ax.plot_trisurf(x, y, z, cmap=cm.jet, linewidth=0.1)
-fig.colorbar(surf, shrink=0.5, aspect=5)
-# plt.savefig('teste.pdf')
-plt.show()
-# endregion
-
-
-# region surface plot with matplotlib
-# https://matplotlib.org/stable/gallery/mplot3d/surface3d.html
-# to make this example work in our context look at the solution
-# of Steven in
-# https://stackoverflow.com/questions/9170838/surface-plots-in-matplotlib
-# import matplotlib.pyplot as plt
-# from matplotlib import cm
-# from matplotlib.ticker import LinearLocator
-
-# X = np.arange(-5, 5, 0.25)
-# Y = np.arange(-5, 5, 0.25)
-# X, Y = np.meshgrid(X, Y)
-# R = np.sqrt(X**2 + Y**2)
-# Z = np.sin(R)
-# # Plot the surface.
-# fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-# surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
-#                        linewidth=0, antialiased=False)
-# # A StrMethodFormatter is used automatically
-# ax.zaxis.set_major_formatter('{x:.02f}')
-
-# # Add a color bar which maps values to colors.
-# fig.colorbar(surf, shrink=0.5, aspect=5)
-
-# plt.show()
-# endregion
