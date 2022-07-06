@@ -5,12 +5,13 @@ import pandas as pd
 import datetime as dt
 import plotly.express as px
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 
 time_format = "%H:%M:%S"
 def time_now():
     return dt.datetime.now().strftime(time_format)
 
-class PigWorldLooped:
+class PigWorld:
     def __init__(self,
                  num_sides=2,
                  winning_score=2,
@@ -171,50 +172,38 @@ class PigWorldLooped:
         return self.__non_terminal_states
 
 
-def value_iteration_vanilla(env, gamma, theta):
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started vanilla value iteration')
+def value_iteration(iteration_type, env, gamma, theta):
+
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started {iteration_type}  value iteration')
+    # for V we use the full env.S since the q-value computation in get_q_value() 
+    #   is more comprehensive if terminal state sp are available in V (even though they remain at 0)
     V = {s: 0 for s in env.S}
-    log_counter = 0
-    while True:
-        log_counter += 1
-        delta = 0
-        for s in env.non_terminal_states:
-            v = V[s]
-            bellman_optimality_update(env, V, s, gamma)
-            delta = max(delta, abs(v - V[s]))
-        if delta < theta:
-            break
-        print(f'{time_now()} Loop {log_counter} finished. Delta at {delta}') if log_counter%5 == 0 else None
+    # tracking the Q values is just for convenience for post-compute analysis
+    Q = {s: {a: 0 for a in env.A} for s in env.non_terminal_states}
 
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Get final q-values')
-    q_values = get_q_values(env, V, gamma)
+    if iteration_type == 'vanilla':
+        states_in_scope = env.non_terminal_states
+        value_iteration_core(states_in_scope, env, V, Q, gamma, theta)
+    
+    elif iteration_type == 'backward':
+        score_sum_dict = get_partition_by_score_sum(env)
+        for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
+            print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
+            value_iteration_core(score_sum_dict[score_sum], env, V, Q, gamma, theta)
 
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Finished vanilla value iteration')
-    return V, q_values
+    elif iteration_type == 'backward_split':
+        score_sum_dict = get_partition_by_score_sum(env)
+        for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
+            print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
+            # score_sum = 90
+            score_sum_score_switch_dict = get_score_sum_score_switch_dict(score_sum, score_sum_dict)
+            for switch_states_key in score_sum_score_switch_dict.keys():
+                value_iteration_core(score_sum_score_switch_dict[switch_states_key], env, V, Q, gamma, theta)
 
+    Q = pd.DataFrame.from_dict(Q, orient='index')
 
-def value_iteration_backward(env, gamma, theta):
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started backward value iteration')
-
-    V = {s: 0 for s in env.S}
-
-    score_sum_dict = get_partition_by_score_sum(env)
-    for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
-        print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
-        while True:
-            delta = 0
-            for s in score_sum_dict[score_sum]:
-                v = V[s]
-                bellman_optimality_update(env, V, s, gamma)
-                delta = max(delta, abs(v - V[s]))
-            if delta < theta:
-                break
-
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Get final q-values')
-    q_values = get_q_values(env, V, gamma)
-
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Finished backward value iteration')
-    return V, q_values
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Finished {iteration_type} value iteration')
+    return V, Q
 
 
 def get_partition_by_score_sum(env):
@@ -228,13 +217,40 @@ def get_partition_by_score_sum(env):
     return score_sums_dict
 
 
-def bellman_optimality_update(env, V, s, gamma):
+def get_score_sum_score_switch_dict(score_sum, score_sum_dict):
+    score_sum_states = list(score_sum_dict[score_sum])
+    score_switch_dict = {}
+    while score_sum_states:
+        state_1_score_1 = score_sum_states[0][0]
+        state_1_score_2 = score_sum_states[0][1]
+        key_name = str(score_sum) + '_' + str(state_1_score_1) + '_' + str(state_1_score_2)
+        score_switch_dict[key_name] = tuple(s for s in score_sum_states if (((s[0] == state_1_score_1) & (s[1] == state_1_score_2))
+                                                                            | ((s[1] == state_1_score_1) & (s[0] == state_1_score_2))))
+        score_sum_states = list(s for s in score_sum_states if s not in score_switch_dict[key_name])
+    return score_switch_dict
+
+
+def value_iteration_core(states_in_scope, env, V, Q, gamma, theta):
+    while True:
+        delta = 0
+        for s in states_in_scope:
+            v = V[s]
+            bellman_optimality_update(env, V, Q, s, gamma)
+            delta = max(delta, abs(v - V[s]))
+        if delta < theta:
+            break
+    return None
+
+
+def bellman_optimality_update(env, V, Q, s, gamma):
     q_values_max = float("-inf")
     for a in env.A:
         q_value_a = get_q_value(env, V, s, a, gamma)
+        Q[s][a] = q_value_a
         if q_value_a >= q_values_max:
             q_values_max = q_value_a    
     V[s] = q_values_max
+    return None
 
 
 def get_q_value(env, V, s, a, gamma):
@@ -248,25 +264,15 @@ def get_q_value(env, V, s, a, gamma):
     # remaining summands
     for sp, r, p in transitions[1:]:
         q_value += p * (r + gamma * V[sp])
-
     return q_value
-
-
-def get_q_values(env, V, gamma):
-    q_values = pd.DataFrame(columns=env.A, index=env.non_terminal_states)
-    for s in env.non_terminal_states:
-        for a in env.A:
-            q_value_a = get_q_value(env, V, s, a, gamma)
-            q_values.loc[s, a] = q_value_a
-    return q_values
 
 
 num_sides = 6
 winning_score = 100
 game_type = 'dice'
-env = PigWorldLooped(num_sides=num_sides,
-                     winning_score=winning_score,
-                     game_type=game_type)
+env = PigWorld(num_sides=num_sides,
+               winning_score=winning_score,
+               game_type=game_type)
 # env.__dict__
 # env.A
 # env.S
@@ -274,11 +280,16 @@ env = PigWorldLooped(num_sides=num_sides,
 # env.non_terminal_states
 gamma = 1
 theta = 0.0001
-# V, q_values = value_iteration_vanilla(env, gamma, theta)
-V, q_values = value_iteration_backward(env, gamma, theta)
+V, q_values = value_iteration('backward', env, gamma, theta)
+
+# V, q_values = value_iteration('backward', env, gamma, theta) --> 
+
 
 filename = f'q_values_{game_type}_{num_sides}_{winning_score}.gz'
 q_values.to_pickle(filename)
+
+
+q_values = pd.read_pickle(filename)
 
 
 # score_sum_dict = get_partition_by_score_sum(env)
@@ -301,21 +312,47 @@ decision_space['roll_flag'] = decision_space['roll_flag'].astype('int')
 cols_temp = list(decision_space.columns)
 decision_space.reset_index(inplace=True, drop=False)
 decision_space.columns = ['score_1', 'score_2', 'turn_total'] + cols_temp
-# derive highest k where still rolling given score_1 and score_2
-decision_space['max_turn_total'] = decision_space.groupby(by=['score_1', 'score_2', 'roll_flag'])['turn_total'].transform(max)
+
+# derive switches between actions
+# first sort (should be sorted but just to be safe)
+decision_space.sort_values(by=['score_1', 'score_2', 'turn_total'], inplace=True)
+# shift and compare with previous
+decision_space['next_step'] = decision_space.groupby(['score_1', 'score_2'])['roll_flag'].shift(-1)
+# label boundaries
+flag_temp = decision_space['roll_flag'] != decision_space['next_step']
+flag_temp = flag_temp & (~np.isnan(decision_space['next_step']))
+decision_space['boundary_flag'] = 0
+decision_space.loc[flag_temp, 'boundary_flag'] = 1
+decision_space
+del decision_space['next_step']
 
 # look at some decision boundaries for score_1 and score_2 fixed
-score_1 = 1
-score_2 = 8
+score_1 = 70
+score_2 = 30
 temp_flag = ((decision_space['score_1'] == score_1) & (decision_space['score_2'] == score_2))
+decision_line = decision_space[temp_flag].copy()
+decision_line
+
+# look at some decision boundaries for score_2 fixed
+score_2 = 30
+temp_flag = decision_space['score_2'] == score_2
 decision_line = decision_space[temp_flag].copy()
 decision_line
 # endregion
 
 
+# region plot decision boundary for score_2 fixed
+score_2 = 30
+temp_flag = ((decision_space['score_2'] == score_2) & (decision_space['boundary_flag'] == 1))
+decision_line = decision_space[temp_flag].copy()
+decision_line
+plt.scatter(x=decision_line['score_1'], y=decision_line['turn_total'])
+plt.plot(list(decision_line['score_1']), list(decision_line['turn_total']))
+# endregion
+
+
 # region plot decision boundary with plotly
-temp_flag = ((decision_space['roll_flag'] == 1)
-             & ((decision_space['turn_total'] == decision_space['max_turn_total'])))
+temp_flag = decision_space['boundary_flag'] == 1
 decision_boundary = decision_space[temp_flag].copy()
 
 # transform data into shape of data used in the plotly example on
@@ -349,8 +386,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 # prepare data
-temp_flag = ((decision_space['roll_flag'] == 1)
-             & ((decision_space['turn_total'] == decision_space['max_turn_total'])))
+temp_flag = decision_space['boundary_flag'] == 1
 decision_boundary = decision_space[temp_flag].copy()
 x = decision_boundary['score_1']
 y = decision_boundary['score_2']
