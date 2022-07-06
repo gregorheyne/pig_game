@@ -11,6 +11,7 @@ time_format = "%H:%M:%S"
 def time_now():
     return dt.datetime.now().strftime(time_format)
 
+
 class PigWorld:
     def __init__(self,
                  num_sides=2,
@@ -173,17 +174,42 @@ class PigWorld:
 
 
 def value_iteration(iteration_type, env, gamma, theta):
+    '''
+    - implements value iteration as specified in Neller, Presser (i.e. as in Barto, Sutton)
+        for the Pig Game
+    - iteration_type can be one of vanilla, backward, backward_split
+    - vanilla: 
+        - standard value iteration that sweeps over the whole state space (or rather all the non-terminal state)
+            for each run
+    - backward: 
+        - makes use of the fact that score_1 and score_2 can never decrease and can only change, when
+            holding or throwing a 1 (e.g. s=(i, j, k) can lead to sp=(j, i, 0) but 
+            s[0] + s[1] = sp[0] + sp[1])
+        - computes the value function V backwards through the score_sums given by score_1 + score_2
+            - computation of V for any score_sum only relies on higher score_sum, which have been
+                calculated already, since higher score_sums are calculated first
+        - about 50% faster on the 4-side dice 25 winning point game
+        - 6-side dice 100 winning game wasnt even possible with vanilla approach
 
-    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started {iteration_type}  value iteration')
-    # for V we use the full env.S since the q-value computation in get_q_value() 
+    - backward_split:
+        - split up the states having the same score sum further by considering
+            for i and j given all s, where ((s[0] = i and s[1] = j) or (s[0] = j and s[1] = i)) 
+        - i.e. for score_sum = 90, all s with s[0] and s[1] in [45, 45] are considered and then all
+            s with s[0] and s[1] in [30, 60]. Order doesnt matter here, since all the states in one 
+            score_sum split can not be reached from any state with a different split and same score_sum
+        - about 20% faster on the 6-side dice 100 winning point game
+    '''
+
+
+    print(f'{dt.datetime.now().strftime("%H:%M:%S")} Started {iteration_type} value iteration')
+    # for V we use the full state space (env.S) since the q-value computation in get_q_value() 
     #   is more comprehensive if terminal state sp are available in V (even though they remain at 0)
     V = {s: 0 for s in env.S}
     # tracking the Q values is just for convenience for post-compute analysis
     Q = {s: {a: 0 for a in env.A} for s in env.non_terminal_states}
 
     if iteration_type == 'vanilla':
-        states_in_scope = env.non_terminal_states
-        value_iteration_core(states_in_scope, env, V, Q, gamma, theta)
+        value_iteration_core(env.non_terminal_states, env, V, Q, gamma, theta)
     
     elif iteration_type == 'backward':
         score_sum_dict = get_partition_by_score_sum(env)
@@ -207,6 +233,11 @@ def value_iteration(iteration_type, env, gamma, theta):
 
 
 def get_partition_by_score_sum(env):
+    '''
+    - computes all possible sum of score_1 and score_2 in env.non_terminal_states
+        and returns a dict where keys are score_sums and values are a tuple of state tuples
+        with score_sum equal to key
+    '''
     score_sums = pd.DataFrame(env.non_terminal_states, columns=['score_1', 'score_2', 'k'])
     score_sums['score_sum'] = score_sums['score_1'] + score_sums['score_2']
     score_sums_dict = {}
@@ -218,6 +249,10 @@ def get_partition_by_score_sum(env):
 
 
 def get_score_sum_score_switch_dict(score_sum, score_sum_dict):
+    '''
+    - given a score_sum a dict is returned where keys are score_sum_i_j and values are all
+        states with score_sum as in key and score_1/score_2 either i or j
+    '''
     score_sum_states = list(score_sum_dict[score_sum])
     score_switch_dict = {}
     while score_sum_states:
@@ -231,6 +266,9 @@ def get_score_sum_score_switch_dict(score_sum, score_sum_dict):
 
 
 def value_iteration_core(states_in_scope, env, V, Q, gamma, theta):
+    '''
+    - standard loop over states_in_scope until V has converged on states_in_scope
+    '''
     while True:
         delta = 0
         for s in states_in_scope:
@@ -243,6 +281,9 @@ def value_iteration_core(states_in_scope, env, V, Q, gamma, theta):
 
 
 def bellman_optimality_update(env, V, Q, s, gamma):
+    '''
+    - one round of update of V at s 
+    '''
     q_values_max = float("-inf")
     for a in env.A:
         q_value_a = get_q_value(env, V, s, a, gamma)
@@ -254,6 +295,9 @@ def bellman_optimality_update(env, V, Q, s, gamma):
 
 
 def get_q_value(env, V, s, a, gamma):
+    '''
+    - computation of q-value given s and a and current state of V
+    '''
 
     transitions = env.transitions(s, a)
 
@@ -280,10 +324,7 @@ env = PigWorld(num_sides=num_sides,
 # env.non_terminal_states
 gamma = 1
 theta = 0.0001
-V, q_values = value_iteration('backward', env, gamma, theta)
-
-# V, q_values = value_iteration('backward', env, gamma, theta) --> 
-
+V, q_values = value_iteration('backward_split', env, gamma, theta)
 
 filename = f'q_values_{game_type}_{num_sides}_{winning_score}.gz'
 q_values.to_pickle(filename)
