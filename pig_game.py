@@ -312,7 +312,7 @@ def get_q_value(env, V, s, a, gamma):
 
 
 num_sides = 6
-winning_score = 100
+winning_score = 50
 game_type = 'dice'
 env = PigWorld(num_sides=num_sides,
                winning_score=winning_score,
@@ -323,7 +323,7 @@ env = PigWorld(num_sides=num_sides,
 # env.terminal_states
 # env.non_terminal_states
 gamma = 1
-theta = 0.0001
+theta = 0.00001
 V, q_values = value_iteration('backward_split', env, gamma, theta)
 
 filename = f'q_values_{game_type}_{num_sides}_{winning_score}.gz'
@@ -366,25 +366,33 @@ decision_space['boundary_flag'] = 0
 decision_space.loc[flag_temp, 'boundary_flag'] = 1
 decision_space
 del decision_space['next_step']
+# endregion
+
 
 # look at some decision boundaries for score_1 and score_2 fixed
-score_1 = 70
-score_2 = 30
+score_1 = 10
+score_2 = 0
 temp_flag = ((decision_space['score_1'] == score_1) & (decision_space['score_2'] == score_2))
 decision_line = decision_space[temp_flag].copy()
-decision_line
 
-# look at some decision boundaries for score_2 fixed
-score_2 = 30
-temp_flag = decision_space['score_2'] == score_2
-decision_line = decision_space[temp_flag].copy()
-decision_line
-# endregion
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=decision_line['turn_total'],
+                         y=decision_line['roll'],
+                         mode='lines',
+                         name='roll'))
+fig.add_trace(go.Scatter(x=decision_line['turn_total'],
+                         y=decision_line['hold'],
+                         mode='lines',
+                         name='hold'))
+fig.update_layout(title=f'P(win | roll) and P(win | hold) across turn-totals for score_1 = {score_1} and score_2 = {score_2}',
+                   xaxis_title='turn total',
+                   yaxis_title='probability of win')
+fig.show()
 
 
 # region plot decision boundary
 # for score_2 fixed
-score_2 = 30
+score_2 = 0
 temp_flag = ((decision_space['score_2'] == score_2) & (decision_space['boundary_flag'] == 1))
 decision_line = decision_space[temp_flag].copy()
 fig = px.scatter(decision_line, x='score_1', y='turn_total')
@@ -400,14 +408,18 @@ fig = px.scatter_3d(boundary_space,
                     y='score_2',
                     z='turn_total',
                     color='score_2',
-                    color_continuous_midpoint=boundary_space['score_2'].mean()
+                    color_continuous_midpoint=boundary_space['score_2'].mean(),
                     # size='turn_total',
                     # opacity=0.7
                     )
+fig.update_layout(title='Decision boundary', autosize=False,
+                  width=700, height=700,
+                  margin=dict(l=50, r=50, b=50, t=50))
 fig.show()
 
-import plotly.graph_objects as go
 
+# 3d with different colorscales
+import plotly.graph_objects as go
 fig = go.Figure(data=[go.Scatter3d(
     x=boundary_space['score_1'],
     y=boundary_space['score_2'],
