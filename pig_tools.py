@@ -3,9 +3,6 @@ import numpy as np
 import itertools
 import pandas as pd
 import datetime as dt
-import plotly.express as px
-import plotly.graph_objects as go
-import matplotlib.pyplot as plt
 
 time_format = "%H:%M:%S"
 def time_now():
@@ -173,7 +170,7 @@ class PigWorld:
         return self.__non_terminal_states
 
 
-def value_iteration(iteration_type, env, gamma, theta):
+def value_iteration(iteration_type, env, theta):
     '''
     - implements value iteration as specified in Neller, Presser (i.e. as in Barto, Sutton)
         for the Pig Game
@@ -209,13 +206,13 @@ def value_iteration(iteration_type, env, gamma, theta):
     Q = {s: {a: 0 for a in env.A} for s in env.non_terminal_states}
 
     if iteration_type == 'vanilla':
-        value_iteration_core(env.non_terminal_states, env, V, Q, gamma, theta)
+        value_iteration_core(env.non_terminal_states, env, V, Q, theta)
     
     elif iteration_type == 'backward':
         score_sum_dict = get_partition_by_score_sum(env)
         for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
             print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
-            value_iteration_core(score_sum_dict[score_sum], env, V, Q, gamma, theta)
+            value_iteration_core(score_sum_dict[score_sum], env, V, Q, theta)
 
     elif iteration_type == 'backward_split':
         score_sum_dict = get_partition_by_score_sum(env)
@@ -224,7 +221,7 @@ def value_iteration(iteration_type, env, gamma, theta):
             # score_sum = 90
             score_sum_score_switch_dict = get_score_sum_score_switch_dict(score_sum, score_sum_dict)
             for switch_states_key in score_sum_score_switch_dict.keys():
-                value_iteration_core(score_sum_score_switch_dict[switch_states_key], env, V, Q, gamma, theta)
+                value_iteration_core(score_sum_score_switch_dict[switch_states_key], env, V, Q, theta)
 
     Q = pd.DataFrame.from_dict(Q, orient='index')
 
@@ -265,7 +262,7 @@ def get_score_sum_score_switch_dict(score_sum, score_sum_dict):
     return score_switch_dict
 
 
-def value_iteration_core(states_in_scope, env, V, Q, gamma, theta):
+def value_iteration_core(states_in_scope, env, V, Q, theta):
     '''
     - standard loop over states_in_scope until V has converged on states_in_scope
     '''
@@ -273,20 +270,20 @@ def value_iteration_core(states_in_scope, env, V, Q, gamma, theta):
         delta = 0
         for s in states_in_scope:
             v = V[s]
-            bellman_optimality_update(env, V, Q, s, gamma)
+            bellman_optimality_update(env, V, Q, s)
             delta = max(delta, abs(v - V[s]))
         if delta < theta:
             break
     return None
 
 
-def bellman_optimality_update(env, V, Q, s, gamma):
+def bellman_optimality_update(env, V, Q, s):
     '''
     - one round of update of V at s 
     '''
     q_values_max = float("-inf")
     for a in env.A:
-        q_value_a = get_q_value(env, V, s, a, gamma)
+        q_value_a = get_q_value(env, V, s, a)
         Q[s][a] = q_value_a
         if q_value_a >= q_values_max:
             q_values_max = q_value_a    
@@ -294,11 +291,11 @@ def bellman_optimality_update(env, V, Q, s, gamma):
     return None
 
 
-def get_q_value(env, V, s, a, gamma):
+def get_q_value(env, V, s, a):
     '''
     - computation of q-value given s and a and current state of V
     '''
-
+    gamma = 1
     transitions = env.transitions(s, a)
 
     q_value = 0
@@ -311,135 +308,30 @@ def get_q_value(env, V, s, a, gamma):
     return q_value
 
 
-num_sides = 6
-winning_score = 50
-game_type = 'dice'
-env = PigWorld(num_sides=num_sides,
-               winning_score=winning_score,
-               game_type=game_type)
-# env.__dict__
-# env.A
-# env.S
-# env.terminal_states
-# env.non_terminal_states
-gamma = 1
-theta = 0.00001
-V, q_values = value_iteration('backward_split', env, gamma, theta)
+def get_decision_space(q_values):
+    # generate roll_flag
+    decision_space = q_values.copy()
+    roll_flag = decision_space['roll'] >= decision_space['hold']
+    decision_space['roll_flag'] = roll_flag
+    decision_space['roll_flag'] = decision_space['roll_flag'].astype('int')
 
-filename = f'q_values_{game_type}_{num_sides}_{winning_score}.gz'
-q_values.to_pickle(filename)
+    # turn index into columns
+    cols_temp = list(decision_space.columns)
+    decision_space.reset_index(inplace=True, drop=False)
+    decision_space.columns = ['score_1', 'score_2', 'turn_total'] + cols_temp
 
+    # derive switches between actions
+    # first sort (should be sorted already but just to be safe)
+    decision_space.sort_values(by=['score_1', 'score_2', 'turn_total'], inplace=True)
+    # shift and compare with previous
+    decision_space['next_step'] = decision_space.groupby(['score_1', 'score_2'])['roll_flag'].shift(-1)
+    # label boundaries
+    flag_temp = decision_space['roll_flag'] != decision_space['next_step']
+    flag_temp = flag_temp & (~np.isnan(decision_space['next_step']))
+    decision_space['boundary_flag'] = 0
+    decision_space.loc[flag_temp, 'boundary_flag'] = 1
+    decision_space
+    del decision_space['next_step']
 
-q_values = pd.read_pickle(filename)
-
-
-# score_sum_dict = get_partition_by_score_sum(env)
-# for score_sum in reversed(sorted(list(score_sum_dict.keys()))):
-#     print(f'{time_now()} iterate on score_sum = {score_sum} ({len(score_sum_dict[score_sum])} elements)')
-# score_sum_dict[195]
-
-# s = (5,7,3)
-# q_values.loc[s,:]
-
-
-# region get decision_space df
-# generate roll_flag
-decision_space = q_values.copy()
-roll_flag = decision_space['roll'] >= decision_space['hold']
-decision_space['roll_flag'] = roll_flag
-decision_space['roll_flag'] = decision_space['roll_flag'].astype('int')
-
-# turn index into columns
-cols_temp = list(decision_space.columns)
-decision_space.reset_index(inplace=True, drop=False)
-decision_space.columns = ['score_1', 'score_2', 'turn_total'] + cols_temp
-
-# derive switches between actions
-# first sort (should be sorted but just to be safe)
-decision_space.sort_values(by=['score_1', 'score_2', 'turn_total'], inplace=True)
-# shift and compare with previous
-decision_space['next_step'] = decision_space.groupby(['score_1', 'score_2'])['roll_flag'].shift(-1)
-# label boundaries
-flag_temp = decision_space['roll_flag'] != decision_space['next_step']
-flag_temp = flag_temp & (~np.isnan(decision_space['next_step']))
-decision_space['boundary_flag'] = 0
-decision_space.loc[flag_temp, 'boundary_flag'] = 1
-decision_space
-del decision_space['next_step']
-# endregion
-
-
-# look at some decision boundaries for score_1 and score_2 fixed
-score_1 = 10
-score_2 = 0
-temp_flag = ((decision_space['score_1'] == score_1) & (decision_space['score_2'] == score_2))
-decision_line = decision_space[temp_flag].copy()
-
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=decision_line['turn_total'],
-                         y=decision_line['roll'],
-                         mode='lines',
-                         name='roll'))
-fig.add_trace(go.Scatter(x=decision_line['turn_total'],
-                         y=decision_line['hold'],
-                         mode='lines',
-                         name='hold'))
-fig.update_layout(title=f'P(win | roll) and P(win | hold) across turn-totals for score_1 = {score_1} and score_2 = {score_2}',
-                   xaxis_title='turn total',
-                   yaxis_title='probability of win')
-fig.show()
-
-
-# region plot decision boundary
-# for score_2 fixed
-score_2 = 0
-temp_flag = ((decision_space['score_2'] == score_2) & (decision_space['boundary_flag'] == 1))
-decision_line = decision_space[temp_flag].copy()
-fig = px.scatter(decision_line, x='score_1', y='turn_total')
-fig.update_layout(title=f'Decision boundary for the score of player 2 fixed at {score_2}',
-                  xaxis_title='Score of Player 1')
-fig.show()
-
-# general 3D
-temp_flag = (decision_space['boundary_flag'] == 1)
-boundary_space = decision_space[temp_flag].copy()
-fig = px.scatter_3d(boundary_space, 
-                    x='score_1',
-                    y='score_2',
-                    z='turn_total',
-                    color='score_2',
-                    color_continuous_midpoint=boundary_space['score_2'].mean(),
-                    # size='turn_total',
-                    # opacity=0.7
-                    )
-fig.update_layout(title='Decision boundary', autosize=False,
-                  width=700, height=700,
-                  margin=dict(l=50, r=50, b=50, t=50))
-fig.show()
-
-
-# 3d with different colorscales
-import plotly.graph_objects as go
-fig = go.Figure(data=[go.Scatter3d(
-    x=boundary_space['score_1'],
-    y=boundary_space['score_2'],
-    z=boundary_space['turn_total'],
-    mode='markers',
-    marker=dict(
-        # size=12,
-        color=boundary_space['score_2'],
-        colorscale='BrBg'
-    )
-)])
-fig.update_layout(width=750,
-                  height=750,
-                  title='Decision boundary',
-                  scene={'xaxis_title': 'score_1 (=x)',
-                         'yaxis_title': 'score_2 (=y)',
-                         'zaxis_title': 'turn total (=z)'})
-fig.show()
-
-# endregion
-
-
+    return decision_space
 
